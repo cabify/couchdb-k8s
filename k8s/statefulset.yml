@@ -1,0 +1,79 @@
+apiVersion: apps/v1beta1
+kind: StatefulSet
+metadata:
+  name: couch
+spec:
+  replicas: 3
+  serviceName: couchdb2-replica-admin
+  template:
+    metadata:
+      annotations:
+        service-discovery.datadoghq.com/couchdb2.check_names: '["couch"]'
+        service-discovery.datadoghq.com/couchdb2.init_configs: '[{}]'
+        service-discovery.datadoghq.com/couchdb2.instances: '[{"server": "http://%%host%%:5986"}]'
+      labels:
+        app: couchdb2-replica-node
+    spec:
+      containers:
+        - name: couchdb2
+          image: eu.gcr.io/cabify-prodops/couchdb:2.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: couchdb
+              containerPort: 5984
+            - name: backdoor
+              containerPort: 5986
+            - name: epmd
+              containerPort: 4396
+            - containerPort: 9100
+          env:
+            - name: COUCHDB_COOKIE
+              valueFrom:
+                fieldRef:
+                  name: couchdb-replica-credentials
+                  key: cookie
+            - name: NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: COUCHDB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: couchdb-replica-credentials
+                  key: username
+            - name: COUCHDB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                    name: couchdb-replica-credentials
+                    key: password
+            - name: ERL_FLAGS
+              value: "-setcookie $(COUCHDB_COOKIE) -name couchdb@$(NAME).couchdb2-replica-admin"
+          volumeMounts:
+            - mountPath: /opt/couchdb/data
+              name: data-dir
+          resources:
+            requests:
+              cpu: 4
+              memory: "25G"
+            limits:
+              cpu: 8
+              memory: "120G"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: couchdb
+          readinessProbe:
+            httpGet:
+              path: /_up
+              port: couchdb
+  volumeClaimTemplates:
+    - metadata:
+        name: data-dir
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1G
+            storage: 2048G
+        storageClassName: quick
